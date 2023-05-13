@@ -1,3 +1,12 @@
+// ==UserScript==
+// @name        New script
+// @namespace   Violentmonkey Scripts
+// @match       https://www.youtube.com/watch
+// @grant       none
+// @version     1.0
+// @author      me
+// @description 2023/5/10 17:14:28
+// ==/UserScript==
 function main() {
 	let title = document.title;
 	let channelName = document.querySelector('.watch-active-metadata #channel-name .ytd-channel-name a').innerText ;

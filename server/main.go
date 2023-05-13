@@ -105,6 +105,8 @@ func (m *Manager) shouldLike(like *BodyLike) bool {
 			return true
 		case strings.Contains(ls, "soundtrack"):
 			return true
+		case strings.Contains(ls, `lyrics`):
+			return true
 		}
 	}
 
@@ -234,7 +236,7 @@ func (m *Manager) getID(link string) string {
 func (m *Manager) remove(link string) {
 	id := m.getID(link)
 
-	paths, err := filepath.Glob(fmt.Sprintf(`*[%s]*`, id))
+	paths, err := filepath.Glob(fmt.Sprintf(`*\[%s\].*`, id))
 	if err != nil {
 		panic(err)
 	}
