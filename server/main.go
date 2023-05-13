@@ -171,6 +171,7 @@ func (m *Manager) setLike(link string, like bool) {
 
 	// 只会下载不存在的，如果以前没下完，不会下。
 	if _, ok := m.items[m.getID(link)]; !ok && like {
+		m.items[m.getID(link)] = &Item{}
 		go m.download(link)
 		return
 	}
@@ -182,12 +183,6 @@ func (m *Manager) setLike(link string, like bool) {
 
 func (m *Manager) download(link string) {
 	id := m.getID(link)
-
-	m.lockItems.Lock()
-	if _, ok := m.items[id]; !ok {
-		m.items[id] = &Item{}
-	}
-	m.lockItems.Unlock()
 
 	m.saveListFile()
 
