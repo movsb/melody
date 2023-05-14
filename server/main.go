@@ -163,7 +163,11 @@ func (m *Manager) saveListFile() {
 	}
 	defer fp.Close()
 
-	if err := yaml.NewEncoder(fp).Encode(m.items); err != nil {
+	enc := yaml.NewEncoder(fp)
+	if err := enc.Encode(m.items); err != nil {
+		panic(err)
+	}
+	if err := enc.Close(); err != nil {
 		panic(err)
 	}
 }
