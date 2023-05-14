@@ -84,7 +84,12 @@ type Item struct {
 	Done bool `yaml:"done"`
 }
 
-func (m *Manager) shouldLike(like *BodyLike) bool {
+func (m *Manager) shouldLike(like *BodyLike) (should bool) {
+	yaml.NewEncoder(os.Stdout).Encode(like)
+	defer func() {
+		log.Println(`should:`, should)
+	}()
+
 	if !like.Liked {
 		return false
 	}
@@ -106,6 +111,8 @@ func (m *Manager) shouldLike(like *BodyLike) bool {
 		case strings.Contains(ls, "soundtrack"):
 			return true
 		case strings.Contains(ls, `lyrics`):
+			return true
+		case strings.Contains(ls, `mv`):
 			return true
 		}
 	}
@@ -188,7 +195,7 @@ func (m *Manager) download(link string) {
 
 	log.Println("进入下载", link)
 
-	cmd := exec.Command(`yt-dlp`, `--add-metadata`, `--embed-thumbnail`, `--embed-subs`, `--no-playlist`, `--force-ipv4`, `--proxy`, `socks5://192.168.1.86:1080`, link)
+	cmd := exec.Command(`yt-dlp`, `--add-metadata`, `--embed-thumbnail`, `--embed-subs`, `--no-playlist`, `--force-ipv4`, `--no-check-certificates`, `--proxy`, `socks5://192.168.1.86:1080`, link)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
