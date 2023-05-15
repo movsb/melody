@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        New script
 // @namespace   Violentmonkey Scripts
-// @match       https://www.youtube.com/
+// @match       https://www.youtube.com/*
 // @grant       none
 // @version     1.0
 // @author      me
