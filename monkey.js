@@ -1,12 +1,19 @@
 // ==UserScript==
 // @name        New script
 // @namespace   Violentmonkey Scripts
-// @match       https://www.youtube.com/watch
+// @match       https://www.youtube.com/
 // @grant       none
 // @version     1.0
 // @author      me
 // @description 2023/5/10 17:14:28
 // ==/UserScript==
+
+// 页面是通过 History API 管理的，切换页面并不会导致页面加载
+// 所以这个函数是为了解决从 / -> /watch 的时候不会加载扩展。
+function isWatchPage() {
+	return window.location.pathname == '/watch';
+}
+
 function main() {
 	let title = document.title;
 	let channelName = document.querySelector('.watch-active-metadata #channel-name .ytd-channel-name a').innerText ;
@@ -62,6 +69,8 @@ function main() {
 }
 
 setInterval(()=> {
+	if (!isWatchPage()) {return;}
+
 	let likeButton = document.querySelector('#segmented-like-button button');
 	if (!likeButton) { console.log('没有喜欢按钮，等待中...'); }
 	
@@ -73,6 +82,8 @@ setInterval(()=> {
 }, 15000);
 
 setInterval(async ()=> {
+	if (!isWatchPage()) {return;}
+
 	let resp = await fetch('https://melody.home.twofei.com/v1/youtube:downloaded', {
 		method: 'POST',
 		headers: {
