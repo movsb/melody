@@ -81,7 +81,8 @@ type Manager struct {
 }
 
 type Item struct {
-	Done bool `yaml:"done"`
+	isDownloading bool `json:"-"`
+	Done          bool `yaml:"done"`
 }
 
 func (m *Manager) shouldLike(like *BodyLike) (should bool) {
@@ -180,13 +181,23 @@ func (m *Manager) setLike(link string, like bool) {
 	m.lockItems.Lock()
 	defer m.lockItems.Unlock()
 
-	// 只会下载不存在的，如果以前没下完，不会下。
-	if _, ok := m.items[m.getID(link)]; !ok && like {
+	// 没有下载过。
+	item, ok := m.items[m.getID(link)]
+	if !ok && like {
 		m.items[m.getID(link)] = &Item{}
 		go m.download(link)
 		return
 	}
 
+	// log.Println(`item && ok`, item, ok)
+
+	// 下载过，但是目前还没有成功。
+	if like && !item.Done && !item.isDownloading {
+		go m.download(link)
+		return
+	}
+
+	// 不爱了
 	if !like {
 		go m.remove(link)
 	}
@@ -198,6 +209,10 @@ func (m *Manager) download(link string) {
 	m.saveListFile()
 
 	log.Println("进入下载", link)
+
+	m.lockItems.Lock()
+	m.items[id].isDownloading = true
+	m.lockItems.Unlock()
 
 	cmd := exec.Command(`yt-dlp`, `--add-metadata`, `--embed-thumbnail`, `--embed-subs`, `--no-playlist`, `--force-ipv4`, `--no-check-certificates`, `--proxy`, `socks5://192.168.1.86:1080`, link)
 	cmd.Stdin = os.Stdin
@@ -213,7 +228,13 @@ func (m *Manager) download(link string) {
 
 	m.lockItems.Lock()
 	defer m.lockItems.Unlock()
-	m.items[id].Done = ok
+	m.items[id].isDownloading = false
+	// 如果目录下存在 ID 相关的临时文件，则认为没有成功下载。
+	paths, err := filepath.Glob(fmt.Sprintf(`*\[%s\].*.part`, id))
+	if err != nil {
+		panic(err)
+	}
+	m.items[id].Done = ok && len(paths) == 0
 	m.saveListFile()
 }
 

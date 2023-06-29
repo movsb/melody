@@ -9,7 +9,7 @@
 // ==/UserScript==
 
 // 页面是通过 History API 管理的，切换页面并不会导致页面加载
-// 所以这个函数是为了解决从 / -> /watch 的时候不会加载扩展。
+// 所以这个函数是为了解决从 / -> /watch 的时候不会加载扩展的问题。
 function isWatchPage() {
 	return window.location.pathname == '/watch';
 }
