@@ -158,7 +158,9 @@ func (m *Manager) downloaded(link string) bool {
 }
 
 func (m *Manager) saveListFile() {
-	fp, err := os.Create(m.listFile)
+	name := m.listFile + `.tmp`
+	defer os.Remove(name)
+	fp, err := os.Create(name)
 	if err != nil {
 		panic(err)
 	}
@@ -169,6 +171,9 @@ func (m *Manager) saveListFile() {
 		panic(err)
 	}
 	if err := enc.Close(); err != nil {
+		panic(err)
+	}
+	if err := os.Rename(name, m.listFile); err != nil {
 		panic(err)
 	}
 }
