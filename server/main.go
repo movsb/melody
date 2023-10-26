@@ -164,7 +164,6 @@ func (m *Manager) saveListFile() {
 	if err != nil {
 		panic(err)
 	}
-	defer fp.Close()
 
 	enc := yaml.NewEncoder(fp)
 	if err := enc.Encode(m.items); err != nil {
@@ -173,6 +172,10 @@ func (m *Manager) saveListFile() {
 	if err := enc.Close(); err != nil {
 		panic(err)
 	}
+	if err := fp.Close(); err != nil {
+		panic(err)
+	}
+
 	if err := os.Rename(name, m.listFile); err != nil {
 		panic(err)
 	}
