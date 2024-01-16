@@ -1,8 +1,11 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"embed"
+	_ "embed"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,43 +14,35 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v2"
 )
 
-type BodyLike struct {
-	Location      string `json:"location"`
-	Title         string `json:"title"`
-	ChannelName   string `json:"channelName"`
-	BadgeIsArtist bool   `json:"badgeIsArtist"`
-	Liked         bool   `json:"liked"`
-	Description   string `json:"description"`
-	WatchMetadata string `json:"watchMetadata"`
-	HasMusicInfo  bool   `json:"hasMusicInfo"`
-}
+//go:embed melody.user.js
+var fs embed.FS
 
 func main() {
 	if err := os.Chdir("/data"); err != nil {
 		panic(err)
 	}
-	mgr := NewManager(`list.yaml`)
-	http.HandleFunc(`/v1/youtube:like`, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
-			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
-			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
-			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
-			return
-		}
-		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
 
-		var like BodyLike
-		if err := json.NewDecoder(r.Body).Decode(&like); err != nil {
+	mgr := NewManager(`list.yaml`)
+
+	hfs := http.FS(fs)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(hfs)))
+	http.HandleFunc("/static/melody.user.js", func(w http.ResponseWriter, r *http.Request) {
+		f, err := hfs.Open(`melody.user.js`)
+		if err != nil {
 			panic(err)
 		}
-
-		mgr.setLike(like.Location, mgr.shouldLike(&like))
+		w.Header().Set(`Content-Type`, `text/javascript`)
+		now := time.Now().In(time.FixedZone(`China`, 8*60*60)).Format(`2006.1.2.3.4.5`)
+		allBytes, _ := io.ReadAll(f)
+		all := bytes.Replace(allBytes, []byte(`VERSION_PLACEHOLDER`), []byte(now), 1)
+		w.Write(all)
 	})
+
 	http.HandleFunc(`/v1/youtube:downloaded`, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
@@ -58,20 +53,40 @@ func main() {
 		}
 		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
 
-		// only location
-		var like BodyLike
-		if err := json.NewDecoder(r.Body).Decode(&like); err != nil {
-			panic(err)
+		url := r.URL.Query().Get(`url`)
+		fmt.Fprint(w, mgr.getStatus(url))
+	})
+	http.HandleFunc(`/v1/youtube:download`, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
+			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
+			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
+			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
+			return
 		}
+		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
 
-		json.NewEncoder(w).Encode(&BodyGetDownloaded{Done: mgr.downloaded(like.Location)})
+		url := r.URL.Query().Get(`url`)
+		go mgr.download(url)
+	})
+	http.HandleFunc(`/v1/youtube:delete`, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
+			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
+			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
+			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
+			return
+		}
+		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
 
+		url := r.URL.Query().Get(`url`)
+		mgr.remove(url)
 	})
 	http.ListenAndServe(`:80`, nil)
 }
 
 type BodyGetDownloaded struct {
-	Done bool `json:"done"`
+	Status bool `json:"status"`
 }
 
 type Manager struct {
@@ -83,42 +98,6 @@ type Manager struct {
 type Item struct {
 	isDownloading bool `json:"-"`
 	Done          bool `yaml:"done"`
-}
-
-func (m *Manager) shouldLike(like *BodyLike) (should bool) {
-	yaml.NewEncoder(os.Stdout).Encode(like)
-	defer func() {
-		log.Println(`should:`, should)
-	}()
-
-	if !like.Liked {
-		return false
-	}
-
-	if like.BadgeIsArtist {
-		return true
-	}
-	if like.HasMusicInfo {
-		return true
-	}
-
-	for _, s := range []string{like.Title, like.ChannelName, like.Description, like.WatchMetadata} {
-		ls := strings.ToLower(s)
-		switch {
-		case strings.Contains(ls, "music"):
-			return true
-		case strings.Contains(ls, "piano"):
-			return true
-		case strings.Contains(ls, "soundtrack"):
-			return true
-		case strings.Contains(ls, `lyrics`):
-			return true
-		case strings.Contains(ls, `mv`):
-			return true
-		}
-	}
-
-	return false
 }
 
 func NewManager(listFile string) *Manager {
@@ -144,17 +123,22 @@ func NewManager(listFile string) *Manager {
 	}
 }
 
-func (m *Manager) downloaded(link string) bool {
+func (m *Manager) getStatus(link string) string {
 	id := m.getID(link)
 
 	m.lockItems.Lock()
 	defer m.lockItems.Unlock()
 
-	if item, ok := m.items[id]; ok && item.Done {
-		return true
+	if item, ok := m.items[id]; ok {
+		if item.isDownloading {
+			return "Downloading"
+		}
+		if item.Done {
+			return "Downloaded"
+		}
+		return "Failed"
 	}
-
-	return false
+	return "Not Downloaded"
 }
 
 func (m *Manager) saveListFile() {
@@ -181,36 +165,6 @@ func (m *Manager) saveListFile() {
 	}
 }
 
-func (m *Manager) setLike(link string, like bool) {
-	if link == "" {
-		panic("empty link")
-	}
-
-	m.lockItems.Lock()
-	defer m.lockItems.Unlock()
-
-	// 没有下载过。
-	item, ok := m.items[m.getID(link)]
-	if !ok && like {
-		m.items[m.getID(link)] = &Item{}
-		go m.download(link)
-		return
-	}
-
-	// log.Println(`item && ok`, item, ok)
-
-	// 下载过，但是目前还没有成功。
-	if like && !item.Done && !item.isDownloading {
-		go m.download(link)
-		return
-	}
-
-	// 不爱了
-	if !like {
-		go m.remove(link)
-	}
-}
-
 func (m *Manager) download(link string) {
 	id := m.getID(link)
 
@@ -219,14 +173,22 @@ func (m *Manager) download(link string) {
 	log.Println("进入下载", link)
 
 	m.lockItems.Lock()
-	m.items[id].isDownloading = true
+	item, ok := m.items[id]
+	if !ok {
+		item = &Item{}
+		m.items[id] = item
+	}
+	if item.isDownloading {
+		m.lockItems.Unlock()
+		return
+	}
+	item.isDownloading = true
 	m.lockItems.Unlock()
 
 	cmd := exec.Command(`yt-dlp`, `--add-metadata`, `--embed-thumbnail`, `--embed-subs`, `--no-playlist`, `--force-ipv4`, `--no-check-certificates`, `--proxy`, `socks5://192.168.1.86:1080`, link)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	ok := false
 	if err := cmd.Run(); err != nil {
 		log.Println("下载失败", link, err)
 		ok = false
@@ -236,13 +198,13 @@ func (m *Manager) download(link string) {
 
 	m.lockItems.Lock()
 	defer m.lockItems.Unlock()
-	m.items[id].isDownloading = false
+	item.isDownloading = false
 	// 如果目录下存在 ID 相关的临时文件，则认为没有成功下载。
 	paths, err := filepath.Glob(fmt.Sprintf(`*\[%s\].*.part`, id))
 	if err != nil {
 		panic(err)
 	}
-	m.items[id].Done = ok && len(paths) == 0
+	item.Done = ok && len(paths) == 0
 	m.saveListFile()
 }
 

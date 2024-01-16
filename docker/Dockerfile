@@ -1,4 +1,4 @@
-FROM jauderho/yt-dlp
+FROM jauderho/yt-dlp:latest
 
 ADD melody /melody
 
