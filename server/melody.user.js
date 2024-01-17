@@ -29,6 +29,7 @@ const apiBase = 'https://melody.home.twofei.com';
 
 function getUrlOf(path, args, loc) {
 	let url = new URL(apiBase);
+	url.pathname += path ? path.substring(1) : "";
 	if (typeof args == 'object') {
 		let q = url.searchParams;
 		Object.keys(args).forEach(key => {

@@ -29,60 +29,59 @@ func main() {
 
 	mgr := NewManager(`list.yaml`)
 
-	hfs := http.FS(fs)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(hfs)))
+	fsHandler := func(hfs http.FileSystem) http.Handler {
+		mux := http.NewServeMux()
+		mux.Handle("/", http.FileServer(hfs))
+		now := time.Now().In(time.FixedZone(`China`, 8*60*60)).Format(`2006.1.2.15.4.5`)
+		mux.HandleFunc("/melody.user.js", func(w http.ResponseWriter, r *http.Request) {
+			f, err := hfs.Open(`melody.user.js`)
+			if err != nil {
+				panic(err)
+			}
+			w.Header().Set(`Content-Type`, `text/javascript`)
+			allBytes, _ := io.ReadAll(f)
+			all := bytes.Replace(allBytes, []byte(`VERSION_PLACEHOLDER`), []byte(now), 1)
+			w.Write(all)
+		})
+		return mux
+	}
 
-	now := time.Now().In(time.FixedZone(`China`, 8*60*60)).Format(`2006.1.2.3.4.5`)
-	http.HandleFunc("/static/melody.user.js", func(w http.ResponseWriter, r *http.Request) {
-		f, err := hfs.Open(`melody.user.js`)
-		if err != nil {
-			panic(err)
-		}
-		w.Header().Set(`Content-Type`, `text/javascript`)
-		allBytes, _ := io.ReadAll(f)
-		all := bytes.Replace(allBytes, []byte(`VERSION_PLACEHOLDER`), []byte(now), 1)
-		w.Write(all)
-	})
+	apiHandler := func(mgr *Manager) http.Handler {
+		mux := http.NewServeMux()
+		mux.HandleFunc(`/v1/youtube:downloaded`, func(w http.ResponseWriter, r *http.Request) {
+			url := r.URL.Query().Get(`url`)
+			fmt.Fprint(w, mgr.getStatus(url))
+		})
+		mux.HandleFunc(`/v1/youtube:download`, func(w http.ResponseWriter, r *http.Request) {
+			url := r.URL.Query().Get(`url`)
+			// 先清除可能残留的临时文件
+			mgr.remove(url)
+			go mgr.download(url)
+		})
+		mux.HandleFunc(`/v1/youtube:delete`, func(w http.ResponseWriter, r *http.Request) {
+			url := r.URL.Query().Get(`url`)
+			mgr.remove(url)
+		})
+		return mux
+	}
 
-	http.HandleFunc(`/v1/youtube:downloaded`, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
+	corsHandler := func(api http.Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodOptions {
+				w.Header().Add(`Access-Control-Allow-Origin`, `*`)
+				w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
+				w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
+				w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
+				return
+			}
 			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
-			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
-			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
-			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
-			return
+			api.ServeHTTP(w, r)
 		}
-		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
+	}
 
-		url := r.URL.Query().Get(`url`)
-		fmt.Fprint(w, mgr.getStatus(url))
-	})
-	http.HandleFunc(`/v1/youtube:download`, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
-			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
-			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
-			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
-			return
-		}
-		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
+	http.Handle("/static/", http.StripPrefix("/static", fsHandler(http.FS(fs))))
+	http.Handle("/v1/", corsHandler(apiHandler(mgr)))
 
-		url := r.URL.Query().Get(`url`)
-		go mgr.download(url)
-	})
-	http.HandleFunc(`/v1/youtube:delete`, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Add(`Access-Control-Allow-Origin`, `*`)
-			w.Header().Add(`Access-Control-Allow-Credentials`, `true`)
-			w.Header().Add(`Access-Control-Allow-Methods`, `GET, POST, OPTIONS`)
-			w.Header().Add(`Access-Control-Allow-Headers`, `Content-Type`)
-			return
-		}
-		w.Header().Add(`Access-Control-Allow-Origin`, `*`)
-
-		url := r.URL.Query().Get(`url`)
-		mgr.remove(url)
-	})
 	http.ListenAndServe(`:80`, nil)
 }
 
@@ -250,9 +249,8 @@ func (m *Manager) remove(link string) {
 	}
 
 	m.lockItems.Lock()
-	defer m.lockItems.Unlock()
-
 	delete(m.items, id)
+	m.lockItems.Unlock()
 
 	m.saveListFile()
 }
