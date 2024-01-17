@@ -42,14 +42,16 @@ function getUrlOf(path, args, loc) {
 	return url;
 }
 
-function handleClick() {
+async function handleClick() {
 	let btn = createStatusButton();
 	if (btn.innerText == 'Downloaded') {
 		if (confirm('要删除下载？')) {
-			fetch(getUrlOf('/v1/youtube:delete', {}, true));
+			await fetch(getUrlOf('/v1/youtube:delete', {}, true));
+			await updateStatus();
 		}
 	} else {
-		fetch(getUrlOf('/v1/youtube:download', {}, true));
+		await fetch(getUrlOf('/v1/youtube:download', {}, true));
+		await updateStatus();
 	}
 }
 
@@ -66,15 +68,17 @@ let createStatusButton = function() {
 	return btn;
 };
 
-async function getStatus() {
+async function updateStatus() {
+	let statusButton = createStatusButton();
+	if (!statusButton) return;
+
 	let rsp = await fetch(getUrlOf('/v1/youtube:downloaded', {}, true));
-	return await rsp.text();
+	let status = await rsp.text();
+	
+	statusButton.innerText = status;
 }
 
 setInterval(async ()=> {
 	if (!isWatchPage()) {return;}
-	let statusButton = createStatusButton();
-	if (!statusButton) return;
-	
-	statusButton.innerText = await getStatus();
+	await updateStatus();
 }, 5000);
