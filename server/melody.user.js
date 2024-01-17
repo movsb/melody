@@ -25,20 +25,30 @@ function isWatchPage() {
 	return window.location.pathname == '/watch';
 }
 
+const apiBase = 'https://melody.home.twofei.com';
+
+function getUrlOf(path, args, loc) {
+	let url = new URL(apiBase);
+	if (typeof args == 'object') {
+		let q = url.searchParams;
+		Object.keys(args).forEach(key => {
+			q.set(key, args[key]);
+		});
+	}
+	if (loc) {
+		url.searchParams.set('url', window.location);
+	}
+	return url;
+}
+
 function handleClick() {
 	let btn = createStatusButton();
-	if (btn.innerText == 'Not Downloaded') {
-		let args = new URLSearchParams;
-		args.set('url', window.location);
-		fetch('https://melody.home.twofei.com/v1/youtube:download?' + args.toString());
-		return;
-	}
 	if (btn.innerText == 'Downloaded') {
 		if (confirm('要删除下载？')) {
-			let args = new URLSearchParams;
-			args.set('url', window.location);
-			fetch('https://melody.home.twofei.com/v1/youtube:delete?' + args.toString());
+			fetch(getUrlOf('/v1/youtube:delete', {}, true));
 		}
+	} else {
+		fetch(getUrlOf('/v1/youtube:download', {}, true));
 	}
 }
 
@@ -56,11 +66,8 @@ let createStatusButton = function() {
 };
 
 async function getStatus() {
-	let args = new URLSearchParams;
-	args.set('url', window.location);
-	let rsp = await fetch( 'https://melody.home.twofei.com/v1/youtube:downloaded?' + args.toString());
-	let status = await rsp.text();
-	return status;
+	let rsp = await fetch(getUrlOf('/v1/youtube:downloaded', {}, true));
+	return await rsp.text();
 }
 
 setInterval(async ()=> {

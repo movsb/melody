@@ -31,13 +31,14 @@ func main() {
 
 	hfs := http.FS(fs)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(hfs)))
+
+	now := time.Now().In(time.FixedZone(`China`, 8*60*60)).Format(`2006.1.2.3.4.5`)
 	http.HandleFunc("/static/melody.user.js", func(w http.ResponseWriter, r *http.Request) {
 		f, err := hfs.Open(`melody.user.js`)
 		if err != nil {
 			panic(err)
 		}
 		w.Header().Set(`Content-Type`, `text/javascript`)
-		now := time.Now().In(time.FixedZone(`China`, 8*60*60)).Format(`2006.1.2.3.4.5`)
 		allBytes, _ := io.ReadAll(f)
 		all := bytes.Replace(allBytes, []byte(`VERSION_PLACEHOLDER`), []byte(now), 1)
 		w.Write(all)
@@ -142,6 +143,9 @@ func (m *Manager) getStatus(link string) string {
 }
 
 func (m *Manager) saveListFile() {
+	m.lockItems.Lock()
+	defer m.lockItems.Unlock()
+
 	name := m.listFile + `.tmp`
 	defer os.Remove(name)
 	fp, err := os.Create(name)
@@ -196,6 +200,7 @@ func (m *Manager) download(link string) {
 		ok = true
 	}
 
+	defer m.saveListFile()
 	m.lockItems.Lock()
 	defer m.lockItems.Unlock()
 	item.isDownloading = false
@@ -205,7 +210,6 @@ func (m *Manager) download(link string) {
 		panic(err)
 	}
 	item.Done = ok && len(paths) == 0
-	m.saveListFile()
 }
 
 func (m *Manager) getID(link string) string {
