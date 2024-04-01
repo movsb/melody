@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -56,7 +57,13 @@ func main() {
 			url := r.URL.Query().Get(`url`)
 			// 先清除可能残留的临时文件
 			mgr.remove(url)
-			go mgr.download(url)
+			// 等待下载结束
+			wait := r.URL.Query().Get(`wait`)
+			if wait == `1` || wait == `true` {
+				mgr.download(url)
+			} else {
+				go mgr.download(url)
+			}
 		})
 		mux.HandleFunc(`/v1/youtube:delete`, func(w http.ResponseWriter, r *http.Request) {
 			url := r.URL.Query().Get(`url`)
@@ -211,7 +218,16 @@ func (m *Manager) download(link string) {
 	item.Done = ok && len(paths) == 0
 }
 
+var rePlainId = regexp.MustCompile(`^[a-zA-Z0-9-_]+$`)
+
+// https://www.youtube.com/watch?v=fU2NJrXkMPA
+// https://youtu.be/gOcQP_Gi9r8
+// JGwWNGJdvx8
 func (m *Manager) getID(link string) string {
+	if rePlainId.MatchString(link) {
+		return link
+	}
+
 	var id string
 	u, err := url.Parse(link)
 	if err != nil {
@@ -231,8 +247,6 @@ func (m *Manager) getID(link string) string {
 	return id
 }
 
-// https://www.youtube.com/watch?v=fU2NJrXkMPA
-// https://youtu.be/gOcQP_Gi9r8
 func (m *Manager) remove(link string) {
 	id := m.getID(link)
 
